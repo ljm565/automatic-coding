@@ -5,7 +5,7 @@ import torch
 from torch import distributed as dist
 from torch.utils.data import DataLoader, distributed
 
-from models import GPT2
+# from models import GPT2
 from tools.tokenizers import CustomGPT2Tokenizer
 from utils import LOGGER, RANK, colorstr
 from utils.filesys_utils import read_dataset

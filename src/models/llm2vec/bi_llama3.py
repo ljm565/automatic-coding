@@ -10,7 +10,7 @@ from utils.func_utils import (
     is_transformers_attn_greater_or_equal_4_38,
     is_transformers_attn_greater_or_equal_4_40,
 )
-from models.llm2vec import LLAMA_ATTENTION_CLASSES
+from .bi_llama3_modules import LLAMA_ATTENTION_CLASSES
 
 
 

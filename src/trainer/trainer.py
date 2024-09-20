@@ -55,6 +55,23 @@ class Trainer:
         # init tokenizer, model, dataset, dataloader, etc.
         self.modes = ['train', 'validation'] if self.is_training_mode else ['train', 'validation', 'test']
         preprocessed_data = data_preprocessing(config)
+        
+        
+        
+        from models.llm2vec import LlamaBiForMNTP
+
+        model = LlamaBiForMNTP.from_pretrained("McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp")
+
+        print(model)
+        print()
+        
+        
+        
+        
+        
+        
+        
+        
         self.tokenizer = get_tokenizers(self.config)
         self.dataloaders = get_data_loader(self.config, self.tokenizer, self.modes, self.is_ddp)
         self.model = self._init_model(self.config, self.tokenizer, self.mode)
