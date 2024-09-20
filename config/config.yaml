@@ -1,0 +1,34 @@
+# base
+seed: 0
+deterministic: True
+
+# environment config
+device: cpu     # examples: [0], [0,1], [1,2,3], cpu, mps... 
+
+# project config
+project: outputs/mimic3
+name: automatic_coding
+
+# model config
+pretrained_model: gpt2
+max_len: 128
+
+# data config
+workers: 0                      # Don't worry to set worker. The number of workers will be set automatically according to the batch size.
+mimic3_data_path: data/
+chunk_size: 100000
+
+# train config
+batch_size: 60
+steps: 30000
+warmup_steps: 200
+lr0: 1e-4
+lrf: 0.1                              # last_lr = lr0 * lrf
+scheduler_type: 'cosine'              # ['linear', 'cosine']
+patience: 5                           # Early stopping epochs.
+prediction_print_n: 10                # Number of examples to show during inference.
+train_user_turn_mask_step: 0.5        # [0.0 ~ 1.0], The point where the labels that masked even turns (user turns, e.g., 0, 2, 4, ... turns) are being trained.
+
+# logging config
+common: ['train_loss', 'validation_loss', 'lr']
+metrics: ['ppl', 'bleu2', 'bleu4', 'nist2', 'nist4']   # You can add more metrics after implements metric validation codes
