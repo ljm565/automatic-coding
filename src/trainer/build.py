@@ -1,45 +1,50 @@
 import os
-import subprocess
+from typing import List
+from copy import deepcopy
 
 import torch
 from torch import distributed as dist
 from torch.utils.data import DataLoader, distributed
 
 # from models import GPT2
+# from models.llm2vec import LLM2Vec,
+from models import AutomaticCodingModel
 from tools.tokenizers import CustomGPT2Tokenizer
 from utils import LOGGER, RANK, colorstr
 from utils.filesys_utils import read_dataset
+from utils.data_utils import data_preprocessing
 from utils.data_utils import DLoader, seed_worker
 
 PIN_MEMORY = str(os.getenv('PIN_MEMORY', True)).lower() == 'true'  # global pin_memory for dataloaders
 
 
 
-def get_tokenizers(config):
-    if config.dailydialog_train:
-        tokenizer = CustomGPT2Tokenizer(config)
-        config.vocab_size = tokenizer.vocab_size
-    else:
-        LOGGER.warning(colorstr('yellow', 'You must implement your custom tokenizer loading codes..'))
-        raise NotImplementedError
-    return tokenizer
+def get_model(config, device):
+    model = AutomaticCodingModel(config, device).to(device)
+    tokenizer = model.tokenizer
+    return model, tokenizer
 
 
-def get_model(config, tokenizer, device):
-    model = GPT2(config, tokenizer).to(device)
-    return model
+def build_dataset(config, preprocessed_data, l2v_model_config, tokenizer, modes):
+    def _split_dataset(preprocessed_data, split_digit: List[str]):
+        trainset = {'noteevents': {}, 'labels': {}, 'code_dict': deepcopy(preprocessed_data['code_dict'])}
+        valset = {'noteevents': {}, 'labels': {}, 'code_dict': deepcopy(preprocessed_data['code_dict'])}
 
-
-def build_dataset(config, tokenizer, modes):
-    if config.dailydialog_train:
-        dataset_dir = os.path.join(config.dailydialog_dataset.path, 'dailydialog/processed')
-        dataset_paths = {mode: os.path.join(dataset_dir, f'dailydialog.{mode}') if mode != 'validation' \
-                                                else os.path.join(dataset_dir, 'dailydialog.val') for mode in modes}
-        dataset_dict = {s: DLoader(read_dataset(p), tokenizer, config) for s, p in dataset_paths.items() if s in dataset_paths}
-    else:
-        LOGGER.warning(colorstr('yellow', 'You have to implement data pre-processing code..'))
-        # dataset_dict = {mode: CustomDLoader(config.CUSTOM.get(f'{mode}_data_path')) for mode in modes}
-        raise NotImplementedError
+        for key in ['noteevents', 'labels']:
+            for hadm, v in preprocessed_data[key].items():
+                if hadm[-1] in split_digit:
+                    valset[key][hadm] = deepcopy(v)
+                else:
+                    trainset[key][hadm] = deepcopy(v)
+        
+        return trainset, valset
+    
+    assert all(key in preprocessed_data for key in ['labels', 'noteevents', 'code_dict']), colorstr('red', f'Pre-processed data have to contain "labels", "noteevents", and "code_dict"..')
+    
+    trainset, valset = _split_dataset(preprocessed_data, ['8','9'])
+    split_dataset = {'train': trainset, 'validation': valset}
+    dataset_dict = {s: DLoader(d, l2v_model_config, tokenizer, config) for s, d in split_dataset.items() if s in modes}
+    
     return dataset_dict
 
 
@@ -61,8 +66,8 @@ def build_dataloader(dataset, batch, workers, shuffle=True, is_ddp=False):
                               generator=generator)
 
 
-def get_data_loader(config, tokenizer, modes, is_ddp=False):
-    datasets = build_dataset(config, tokenizer, modes)
+def get_data_loader(config, preprocessed_data, l2v_model_config, tokenizer, modes, is_ddp=False):
+    datasets = build_dataset(config, preprocessed_data, l2v_model_config, tokenizer, modes)
     dataloaders = {m: build_dataloader(datasets[m], 
                                        config.batch_size, 
                                        config.workers, 

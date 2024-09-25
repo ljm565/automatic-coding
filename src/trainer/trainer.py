@@ -10,10 +10,11 @@ from torch import distributed as dist
 
 from tools.tokenizers import *
 from tools import TrainingLogger, Evaluator, EarlyStopper
-from trainer.build import get_model, get_data_loader, get_tokenizers
+from trainer.build import get_model, get_data_loader
 from utils import RANK, LOGGER, SCHEDULER_MSG, SCHEDULER_TYPE, colorstr, init_seeds
 from utils.filesys_utils import *
 from utils.training_utils import *
+from utils.func_utils import to_device
 from utils.data_utils import data_preprocessing
 
 
@@ -55,26 +56,8 @@ class Trainer:
         # init tokenizer, model, dataset, dataloader, etc.
         self.modes = ['train', 'validation'] if self.is_training_mode else ['train', 'validation', 'test']
         preprocessed_data = data_preprocessing(config)
-        
-        
-        
-        from models.llm2vec import LlamaBiForMNTP
-
-        model = LlamaBiForMNTP.from_pretrained("McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp")
-
-        print(model)
-        print()
-        
-        
-        
-        
-        
-        
-        
-        
-        self.tokenizer = get_tokenizers(self.config)
-        self.dataloaders = get_data_loader(self.config, self.tokenizer, self.modes, self.is_ddp)
-        self.model = self._init_model(self.config, self.tokenizer, self.mode)
+        self.model, self.tokenizer = self._init_model(self.config, self.mode)
+        self.dataloaders = get_data_loader(self.config, preprocessed_data, self.model.l2v.model.config, self.tokenizer, self.modes, self.is_ddp)        
         self.training_logger = TrainingLogger(self.config, self.is_training_mode)
         self.evaluator = Evaluator(self.tokenizer)
         self.stopper, self.stop = EarlyStopper(self.config.patience), False
@@ -90,7 +73,7 @@ class Trainer:
         self.lr0 = self.config.lr0
         self.lrf = self.config.lrf
         self.epochs = math.ceil(self.steps / len(self.dataloaders['train'])) if self.is_training_mode else 1
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
+        self.criterion = nn.BCEWithLogitsLoss()
         if self.is_training_mode:
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.lr0)
 
@@ -105,7 +88,7 @@ class Trainer:
                 draw_training_lr_curve(self.config, self.lf, self.steps, self.warmup_steps_n, self.is_ddp, self.world_size)
 
 
-    def _init_model(self, config, tokenizer, mode):
+    def _init_model(self, config, mode):
         def _resume_model(resume_path, device, is_rank_zero):
             try:
                 checkpoints = torch.load(resume_path, map_location=device)
@@ -122,7 +105,7 @@ class Trainer:
 
         # init models
         do_resume = mode == 'resume' or (mode == 'validation' and self.resume_path)
-        model = get_model(config, tokenizer, self.device)
+        model, tokenizer = get_model(config, self.device)
 
         # resume model
         if do_resume:
@@ -132,7 +115,7 @@ class Trainer:
         if self.is_ddp:
             model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.device])
         
-        return model
+        return model, tokenizer
 
 
     def do_train(self):
@@ -203,27 +186,22 @@ class Trainer:
 
         # init progress bar
         if RANK in (-1, 0):
-            logging_header = ['CE Loss', 'lr']
+            logging_header = ['Loss', 'lr']
             pbar = init_progress_bar(train_loader, self.is_rank_zero, logging_header, nb)
 
-        for i, (x, y, _, _) in pbar:
+        for i, (inputs, labels) in pbar:
             # Warmup
             self.train_cur_step += 1
             if self.train_cur_step <= self.warmup_steps_n:
                 self.optimizer.param_groups[0]['lr'] = lr_warmup(self.train_cur_step, self.warmup_steps_n, self.lr0, self.lf)
             cur_lr = self.optimizer.param_groups[0]['lr']
             
-            batch_size = x.size(0)
-            x, y = x.to(self.device), y.to(self.device)
+            batch_size = labels.size(0)
+            inputs, labels = to_device(inputs, self.device), to_device(labels, self.device)
             
             self.optimizer.zero_grad()
-            output = self.model(x)
-            
-            # masked label training
-            if self.train_cur_step / self.steps >= self.config.train_user_turn_mask_step:
-                loss = self.criterion(output[:, :-1, :].reshape(-1, output.size(-1)), y[:, 1:].reshape(-1))
-            else:
-                loss = self.criterion(output[:, :-1, :].reshape(-1, output.size(-1)), x[:, 1:].reshape(-1))
+            output = self.model(inputs)
+            loss = self.criterion(output, labels)
             
             loss.backward()
             self.optimizer.step()
@@ -347,43 +325,3 @@ class Trainer:
         return metric_results
     
     
-    def chatting(self, query: str, is_first_query=False):
-        def _preprocess(query, is_first_query, query_cache=None):
-            if is_first_query:
-                query = [self.tokenizer.cls_token_id] + self.tokenizer.encode(query) + [self.tokenizer.sep_token_id]
-                query_cache = torch.tensor(query, dtype=torch.long).unsqueeze(0).to(self.device)
-            else:
-                query = self.tokenizer.encode(query) + [self.tokenizer.sep_token_id]
-                query_cache = torch.cat([query_cache, torch.tensor(query, dtype=torch.long).unsqueeze(0).to(self.device)], dim=1)
-            return query_cache
-            
-        self.query_cache = None if is_first_query else self.query_cache
-        self.query_cache = _preprocess(query, is_first_query, self.query_cache)
-        query_done = False
-        is_first_query = False
-
-        answer = []
-        while 1:
-            output = self.model(self.query_cache)
-            pred_token = torch.argmax(output[:, -1], dim=-1)
-            answer.append(pred_token.item())
-            self.query_cache = torch.cat((self.query_cache, pred_token.unsqueeze(1)), dim=1)
-
-            if pred_token == self.tokenizer.sep_token_id:
-                answer.pop()
-                break
-            elif pred_token == self.tokenizer.eos_token_id:
-                answer.pop()
-                query_done = True
-                break
-            
-            if self.query_cache.size(1) >= self.max_len:
-                query_done = True
-                break
-            
-            if query_done:
-                self.query_cache = None
-                is_first_query = True
-        
-        answer = self.tokenizer.decode(answer)
-        return self.query_cache, answer, query_done, is_first_query

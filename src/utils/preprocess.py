@@ -48,6 +48,7 @@ def get_hadm_dict(hadm_data_paths: List[str], code_data_paths: List[str], column
 
     Returns:
         dict: Dictionary mapping HADM to ICD code list.
+        dict: Dictionary mapping ICD code to label index.
     """
     LOGGER.info(f'Pre-processing HADM data..')
     if len(hadm_data_paths) != len(code_data_paths):
@@ -73,7 +74,27 @@ def get_hadm_dict(hadm_data_paths: List[str], code_data_paths: List[str], column
                     error_codes[i].append(icd_code)
 
     LOGGER.info(f'Pre-processing HADM data done. Total HADM data: {len(hadm_dict)}')
-    return hadm_dict
+    return hadm_dict, code_dict
+
+
+def preprocess_noteevents(path:str, chunk_size:int=100000, *conditions:List) -> pd.DataFrame:
+    """NOTEEVENTS.csv pre-processing function.
+
+    Args:
+        path (str): NOTEEVENTS.csv data path.
+        chunk_size (int, optional): Pandas reading chunk size. Defaults to 100000.
+
+    Returns:
+        pd.DataFrame: Concatenated Pandas dataframe.
+    """
+    df = pd.concat(list(csv_read(path, chunk_size))).loc[:, ['HADM_ID', 'CATEGORY', 'DESCRIPTION', 'TEXT']]  # get only necessary columns
+    
+    # filtering
+    conditions = [condition(df) for condition in conditions]
+    all_and_condition = reduce(lambda x, y: x & y, conditions)  # all and condition
+    df = df[all_and_condition].loc[:, ['HADM_ID', 'TEXT']]
+    
+    return df
 
 
 def get_noteevent_dict(path:str, chunk_size:int=None) -> dict:
@@ -105,23 +126,3 @@ def get_noteevent_dict(path:str, chunk_size:int=None) -> dict:
     
     LOGGER.info(f'Pre-processing NOTEEVENTS data done. Total HADM and NOTEEVENTS data: {len(noteevent_dict)}')
     return noteevent_dict
-
-
-def preprocess_noteevents(path:str, chunk_size:int=100000, *conditions:List) -> pd.DataFrame:
-    """NOTEEVENTS.csv pre-processing function.
-
-    Args:
-        path (str): NOTEEVENTS.csv data path.
-        chunk_size (int, optional): Pandas reading chunk size. Defaults to 100000.
-
-    Returns:
-        pd.DataFrame: Concatenated Pandas dataframe.
-    """
-    df = pd.concat(list(csv_read(path, chunk_size))).loc[:, ['HADM_ID', 'CATEGORY', 'DESCRIPTION', 'TEXT']]  # get only necessary columns
-    
-    # filtering
-    conditions = [condition(df) for condition in conditions]
-    all_and_condition = reduce(lambda x, y: x & y, conditions)  # all and condition
-    df = df[all_and_condition].loc[:, ['HADM_ID', 'TEXT']]
-    
-    return df

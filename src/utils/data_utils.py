@@ -1,13 +1,16 @@
 import os
 import random
 import numpy as np
-from copy import deepcopy
+from tqdm import tqdm
+from typing import List
 
 import torch
+from torch import Tensor
 from torch.utils.data import Dataset
 
-from utils import colorstr
+from utils import LOGGER, colorstr
 from utils.preprocess import get_hadm_dict, get_noteevent_dict
+from utils.func_utils import _convert_to_str, tokenize, prepare_for_tokenization
 
 
 
@@ -25,71 +28,105 @@ def data_preprocessing(config):
     columns = ['ICD9_CODE', 'ICD9_CODE']
 
     # Label and note event data dictionary
-    labels = get_hadm_dict(hadm_paths, code_paths, columns)
+    labels, code_dict = get_hadm_dict(hadm_paths, code_paths, columns)
     noteevents = get_noteevent_dict(noteevent_path, config.chunk_size)
+
+    # Remain only the necessary labels
+    if config.label_pruning:
+        idx2code = {v: k for k, v in code_dict.items()}
+        labels = {k: [idx2code[e] for e in v] for k, v in labels.items()}
+        used_code = set()
+        for v in labels.values():
+            used_code.update(v)
+        
+        # Make new code dictionary and update labels based on the new code dictionary
+        code_dict = {code: i for i, code in enumerate(list(used_code))}
+        labels = {k: [code_dict[e] for e in v] for k, v in labels.items()}
+    
+    config.n_labels = len(code_dict)
+    return {'noteevents': noteevents, 'labels': labels, 'code_dict': code_dict}
+
+
+def text_tokenize(sentence:str, l2v_config_instance, tokenizer, max_length, pooling_mode, truncation=False, padding=True):
+    sentences = [[""] + [sentence]]
+
+    concatenated_input_texts = []
+    for sentence in sentences:
+        assert isinstance(sentence[0], str)
+        assert isinstance(sentence[1], str)
+        concatenated_input_texts.append(
+            _convert_to_str(sentence[0], sentence[1], tokenizer, max_length)
+        )
+    sentences = concatenated_input_texts
+
+    tokens = tokenize(
+        [prepare_for_tokenization(sentence, l2v_config_instance, pooling_mode) for sentence in sentences],
+        tokenizer,
+        max_length,
+        truncation,
+        padding
+    )
+
+    return tokens
 
 
 
 class DLoader(Dataset):
-    def __init__(self, data, tokenizer, config):
-        self.data = data
+    def __init__(self, data, l2v_model_config, tokenizer, config):
+        self.data = self.preprocess(data)
         self.tokenizer = tokenizer
-        self.max_len = config.max_len
+        self.max_length = config.max_len
+        self.pooling_mode = config.pooling_mode
+        self.l2v_model_config = l2v_model_config
+        self.n_labels = config.n_labels
         self.length = len(self.data)
 
 
-    def make_data(self, multi_turn_sentences):
-        all_turns_tokens = [self.tokenizer.cls_token_id]
-        label_tokens = [self.tokenizer.pad_token_id]
+    def preprocess(self, data):
+        collected_data = list()
+        noteevents, labels = data['noteevents'], data['labels']
+        for hadm, text in tqdm(noteevents.items(), desc="Collecting pre-processed data.."):
+            try:
+                text = '\n\n'.join(text)
+                collected_data.append((text, labels[hadm]))
+            except KeyError:
+                LOGGER.warning(colorstr('yellow', f'HADM "{hadm}"\'s ICD code does not exist in the ICD code dictionary.'))
+                continue
+        return collected_data
+    
 
-        for i, sentence in enumerate(multi_turn_sentences):
-            # source tokens
-            sentence_token = self.tokenizer.encode(sentence) + [self.tokenizer.sep_token_id]
-            all_turns_tokens.extend(sentence_token)
+    def tokenize(self, text):
+        inputs = text_tokenize(
+            text, 
+            self.l2v_model_config,
+            self.tokenizer, 
+            self.max_length, 
+            self.pooling_mode,
+            padding='max_length',
+            truncation=True
+        )
+        return inputs
 
-            if i == 0:
-                first_sentence = self.padding(deepcopy(all_turns_tokens)[:self.max_len], self.max_len, self.tokenizer.pad_token_id)
-                first_sentence_l = len(all_turns_tokens)
 
-            # label tokens
-            if i % 2  == 1:
-                label_tokens.extend(sentence_token)
-            else:
-                label_tokens.extend([self.tokenizer.pad_token_id] * len(sentence_token))
-            
-            if len(all_turns_tokens) >= self.max_len:
-                break
-        
-        # Adding EOS token at the end when the length of tokens cannot be reached to the max length
-        # even though all turns are appended
-        if len(all_turns_tokens) < self.max_len:
-            # source tokens
-            all_turns_tokens += [self.tokenizer.eos_token_id]
-            all_turns_tokens = self.padding(all_turns_tokens, self.max_len, self.tokenizer.pad_token_id)
-            
-            # label tokens
-            label_tokens += [self.tokenizer.eos_token_id]
-            label_tokens = self.padding(label_tokens, self.max_len, self.tokenizer.pad_token_id)
-        else:
-            all_turns_tokens = all_turns_tokens[:self.max_len]
-            label_tokens = label_tokens[:self.max_len]
-
-        assert len(all_turns_tokens) == len(label_tokens) == self.max_len, \
-            colorstr(f'The token length must be equal to the max length of the config.yaml. Expected {self.max_len}, but got {len(all_turns_tokens)}')
-
-        return all_turns_tokens, label_tokens, first_sentence, first_sentence_l
+    @staticmethod
+    def one_hot_encoding(n_labels: int, multi_labels: List[int]):
+        one_hot_matrix = torch.zeros(n_labels)
+        one_hot_matrix[multi_labels] = 1
+        return one_hot_matrix
     
 
     @staticmethod
-    def padding(x:list, length, pad_token_id):
-        x += [pad_token_id] * (length - len(x))
-        return x
+    def squeeze(inputs):
+        for k, v in inputs.items():
+            if isinstance(v, Tensor):
+                inputs[k] = v.squeeze(0)
+        return inputs
 
 
     def __getitem__(self, idx):
-        x, y, fs, fsl = self.make_data(self.data[idx])
-        return torch.tensor(x, dtype=torch.long), torch.tensor(y, dtype=torch.long), \
-                torch.tensor(fs, dtype=torch.long), torch.tensor(fsl, dtype=torch.long)
+        inputs = self.squeeze(self.tokenize(self.data[idx][0]))
+        label = self.one_hot_encoding(self.n_labels, self.data[idx][1])
+        return inputs, label
 
 
     def __len__(self):

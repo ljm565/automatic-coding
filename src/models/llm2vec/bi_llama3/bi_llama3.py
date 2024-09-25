@@ -30,7 +30,6 @@ class ModifiedLlamaDecoderLayer(LlamaDecoderLayer):
         )
 
 
-
 class LlamaBiModel(LlamaModel):
     _no_split_modules = ["ModifiedLlamaDecoderLayer"]
 
