@@ -6,13 +6,12 @@ class ModelManager:
         self.is_init = True
         self.lower_candidates_weights = {
             'validation_loss': 1,
-            'ppl': 0,   # same as validation_loss
         }
         self.higher_candidates_weights = {
-            'bleu2': 0.1,
-            'nist2': 0.1,
-            'bleu4': 0.6,
-            'nist4': 0.2,
+            'aucroc_macro': 0.2,
+            'aucroc_micro': 0.3,
+            'aucprc_macro': 0.2,
+            'aucprc_micro': 0.3,
         }
 
 

@@ -1,3 +1,4 @@
+import numpy as np
 import importlib.metadata
 from packaging import version
 from transformers.utils.import_utils import _is_package_available
@@ -14,6 +15,8 @@ from transformers import (
 
 import torch
 from torch import Tensor
+
+from utils import LOGGER, colorstr
 
 
 
@@ -152,3 +155,29 @@ def prepare_for_tokenization(text, l2v_config_instance, pooling_mode):
         elif isinstance(l2v_config_instance, Qwen2Config):
             text = text.strip() + "<|endoftext|>"
     return text
+
+
+def delete_all_zero_cols(pred: np.ndarray, gt: np.ndarray):
+    zero_columns = np.where(np.all(gt == 0, axis=0))[0]
+    
+    # Delete all zero columns because of sklearn's metric error.
+    # Please refer to CAML paper.
+    gt = np.delete(gt, zero_columns, axis=1)
+    pred = np.delete(pred, zero_columns, axis=1)
+
+    assert gt.shape == pred.shape, 'GT and prediction size mismatch'
+    return pred, gt
+
+
+def print_samples(pred: np.ndarray, gt: np.ndarray, threshold: int):
+    pred = np.where(pred >= threshold, 1, 0)
+
+    # One-hot to indices
+    pred = np.nonzero(pred)[0].tolist()
+    gt = np.nonzero(gt)[0].tolist()
+
+    LOGGER.info('\n' + '-'*100)
+    LOGGER.info(colorstr(f'GT        : {gt}'))
+    LOGGER.info(colorstr(f'Prediction: {pred}'))
+    LOGGER.info('-'*100 + '\n')
+

@@ -2,6 +2,7 @@ import gc
 import time
 import math
 import random
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 import torch
 import torch.nn as nn
@@ -14,8 +15,8 @@ from trainer.build import get_model, get_data_loader
 from utils import RANK, LOGGER, SCHEDULER_MSG, SCHEDULER_TYPE, colorstr, init_seeds
 from utils.filesys_utils import *
 from utils.training_utils import *
-from utils.func_utils import to_device
 from utils.data_utils import data_preprocessing
+from utils.func_utils import to_device, print_samples, delete_all_zero_cols
 
 
 
@@ -243,61 +244,48 @@ class Trainer:
 
         with torch.no_grad():
             if self.is_rank_zero:
-                if not is_training_now:
-                    self.data4vis = _init_log_data_for_vis()
+                self.data4vis = _init_log_data_for_vis()
 
                 val_loader = self.dataloaders[phase]
                 nb = len(val_loader)
-                logging_header = ['CE Loss'] + self.config.metrics
+                logging_header = ['Loss'] + self.config.metrics
                 pbar = init_progress_bar(val_loader, self.is_rank_zero, logging_header, nb)
 
                 self.model.eval()
 
-                for i, (x, y, fs, fsl) in pbar:
-                    batch_size = x.size(0)
-                    x, y, fs = x.to(self.device), y.to(self.device), fs.to(self.device)
+                for i, (inputs, labels) in pbar:
+                    batch_size = labels.size(0)
+                    inputs, labels = to_device(inputs, self.device), to_device(labels, self.device)
 
-                    targets4metrics = [self.tokenizer.decode(t.tolist()) for t in x]
+                    output = self.model(inputs)
+                    loss = self.criterion(output, labels)
+                    output = torch.sigmoid(output)      # To calculate auroc and auprc metrics
 
-                    model = self.model.module if self.is_ddp else self.model
-                    predictions, loss = model.batch_inference(
-                        src=x,
-                        start_tokens=(fs, fsl),
-                        max_len=self.max_len,
-                        tokenizer=self.tokenizer,
-                        loss_func=self.criterion,
-                        target=y
-                    )
+                    # Append results
+                    labels, output = labels.detach().cpu(), output.detach().cpu()
+                    _append_data_for_vis(**{'trg': labels, 'pred': output})
                 
-                    metric_results = self.metric_evaluation(loss, predictions, targets4metrics)
-
+                    # logging
                     self.training_logger.update(
                         phase, 
                         epoch, 
                         self.train_cur_step if is_training_now else 0, 
                         batch_size, 
                         **{'validation_loss': loss.item()},
-                        **metric_results
                     )
-
-                    # logging
                     loss_log = [loss.item()]
-                    msg = tuple([f'{epoch+1}/{self.epochs}'] + loss_log + [metric_results[k] for k in self.metrics])
-                    pbar.set_description(('%15s' + '%15.4g' * (len(loss_log) + len(self.metrics))) % msg)
+                    msg = tuple([f'{epoch+1}/{self.epochs}'] + loss_log)
+                    pbar.set_description(('%15s' + '%15.4g' * (len(loss_log))) % msg)
 
                     ids = random.sample(range(batch_size), min(self.config.prediction_print_n, batch_size))
                     for id in ids:
-                        print_samples(targets4metrics[id], predictions[id])
-
-                    if not is_training_now:
-                        _append_data_for_vis(
-                            **{'trg': targets4metrics,
-                               'pred': predictions}
-                        )
+                        print_samples(output[id], labels[id], self.config.positive_threshold)
 
                 # upadate logs and save model
-                self.training_logger.update_phase_end(phase, printing=True)
+                metric_results = self.metric_evaluation()   # Calculate metrics and update training logger
+                self.training_logger.update_phase_end(phase, metric_results, printing=True)
                 if is_training_now:
+                    model = self.model.module if self.is_ddp else self.model
                     self.training_logger.save_model(self.wdir, model)
                     self.training_logger.save_logs(self.save_dir)
 
@@ -306,22 +294,22 @@ class Trainer:
                     self.stop = self.stopper(epoch + 1, high=high_fitness, low=low_fitness)
 
     
-    def metric_evaluation(self, loss, response_pred, response_gt):
-        metric_results = {k: 0 for k in self.metrics}
-        for m in self.metrics:
-            if m == 'ppl':
-                metric_results[m] = self.evaluator.cal_ppl(loss.item())
-            elif m == 'bleu2':
-                metric_results[m] = self.evaluator.cal_bleu_score(response_pred, response_gt, n=2)
-            elif m == 'bleu4':
-                metric_results[m] = self.evaluator.cal_bleu_score(response_pred, response_gt, n=4)
-            elif m == 'nist2':
-                metric_results[m] = self.evaluator.cal_nist_score(response_pred, response_gt, n=2)
-            elif m == 'nist4':
-                metric_results[m] = self.evaluator.cal_nist_score(response_pred, response_gt, n=4)
-            else:
-                LOGGER.warning(f'{colorstr("red", "Invalid key")}: {m}')
-        
-        return metric_results
+    def metric_evaluation(self):
+        pred, trg = torch.cat(self.data4vis['pred'], dim=0).numpy(), torch.cat(self.data4vis['trg'], dim=0).numpy()
+        pred, trg = delete_all_zero_cols(pred, trg)
+
+        aucroc_macro = roc_auc_score(trg, pred, average='macro')
+        aucroc_micro = roc_auc_score(trg, pred, average='micro')
+        aucprc_macro = average_precision_score(trg, pred, average='macro')
+        aucprc_micro = average_precision_score(trg, pred, average='micro')
+
+        results = {
+            'aucroc_macro': aucroc_macro, 
+            'aucroc_micro': aucroc_micro,
+            'aucprc_macro': aucprc_macro, 
+            'aucprc_micro': aucprc_micro
+        }
+
+        return results
     
     

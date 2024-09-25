@@ -55,7 +55,7 @@ class TrainingLogger:
                         self.log_data[k].append([kwargs[k]])
 
 
-    def update_phase_end(self, phase, printing=False):
+    def update_phase_end(self, phase, metric_results: dict=None, printing=False):
         if phase == 'train':
             train_epoch_result = {}
             for k, v in self.log_data.items():
@@ -75,6 +75,9 @@ class TrainingLogger:
                     v[-1] = value_sum / (sum(self.val_batch_sizes) - reduce_batch_sizes)
                     self.validation_epoch_result[k] = v[-1]
             self.val_batch_sizes = []
+
+            for k, v in metric_results.items():
+                self.validation_epoch_result[k] = v
             
         if printing:
             result = train_epoch_result if phase == 'train' else self.validation_epoch_result
