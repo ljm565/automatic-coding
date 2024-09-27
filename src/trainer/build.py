@@ -3,16 +3,10 @@ from typing import List
 from copy import deepcopy
 
 import torch
-from torch import distributed as dist
 from torch.utils.data import DataLoader, distributed
 
-# from models import GPT2
-# from models.llm2vec import LLM2Vec,
 from models import AutomaticCodingModel
-from tools.tokenizers import CustomGPT2Tokenizer
-from utils import LOGGER, RANK, colorstr
-from utils.filesys_utils import read_dataset
-from utils.data_utils import data_preprocessing
+from utils import RANK, colorstr
 from utils.data_utils import DLoader, seed_worker
 
 PIN_MEMORY = str(os.getenv('PIN_MEMORY', True)).lower() == 'true'  # global pin_memory for dataloaders

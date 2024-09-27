@@ -9,8 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch import distributed as dist
 
-from tools.tokenizers import *
-from tools import TrainingLogger, Evaluator, EarlyStopper
+from tools import TrainingLogger, EarlyStopper
 from trainer.build import get_model, get_data_loader
 from utils import RANK, LOGGER, SCHEDULER_MSG, SCHEDULER_TYPE, colorstr, init_seeds
 from utils.filesys_utils import *
@@ -60,7 +59,6 @@ class Trainer:
         self.model, self.tokenizer = self._init_model(self.config, self.mode)
         self.dataloaders = get_data_loader(self.config, preprocessed_data, self.model.l2v.model.config, self.tokenizer, self.modes, self.is_ddp)        
         self.training_logger = TrainingLogger(self.config, self.is_training_mode)
-        self.evaluator = Evaluator(self.tokenizer)
         self.stopper, self.stop = EarlyStopper(self.config.patience), False
 
         # save the yaml config
@@ -73,8 +71,11 @@ class Trainer:
         self.steps = self.config.steps
         self.lr0 = self.config.lr0
         self.lrf = self.config.lrf
-        self.epochs = math.ceil(self.steps / len(self.dataloaders['train'])) if self.is_training_mode else 1
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.epochs = math.ceil(self.steps / len(self.dataloaders['train'])) if self.is_training_mode else 1        
+        
+        # Apply positive weight to the loss function
+        LOGGER.info(colorstr(f'Positive labels will be weighted more {self.config.pos_weight:.3f} times than negative labels.'))
+        self.criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.config.pos_weight]).to(self.device))
         if self.is_training_mode:
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.lr0)
 

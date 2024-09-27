@@ -174,7 +174,7 @@ def print_samples(pred: np.ndarray, gt: np.ndarray, threshold: int):
 
     # One-hot to indices
     pred = np.nonzero(pred)[0].tolist()
-    gt = np.nonzero(gt)[0].tolist()
+    gt = sum(np.nonzero(gt).tolist(), [])
 
     LOGGER.info('\n' + '-'*100)
     LOGGER.info(colorstr(f'GT        : {gt}'))
