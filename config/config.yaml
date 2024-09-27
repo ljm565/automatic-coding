@@ -3,11 +3,11 @@ seed: 0
 deterministic: True
 
 # environment config
-device: [5]     # examples: [0], [0,1], [1,2,3], cpu, mps... 
+device: [0]     # examples: [0], [0,1], [1,2,3], cpu, mps... 
 
 # project config
 project: outputs/mimic3
-name: automatic_coding
+name: automatic_coding_1_resumed
 
 # model config
 model: llama3
@@ -20,18 +20,19 @@ lora_activate: False
 workers: 0                      # Don't worry to set worker. The number of workers will be set automatically according to the batch size.
 mimic3_data_path: data/
 chunk_size: 100000
-label_pruning: True             # If True, only the required ICD codes will be used, otherwise all codes will be used.
+label_pruning: False             # If True, only the required ICD codes will be used, otherwise all codes will be used.
 
 # train config
 batch_size: 16
 steps: 30000
 warmup_steps: 200
 lr0: 1e-4
-lrf: 0.1                              # last_lr = lr0 * lrf
+lrf: 0.01                              # last_lr = lr0 * lrf
 scheduler_type: 'cosine'              # ['linear', 'cosine']
+pos_weight: 5
 gradient_checkpointing: False
 patience: 5                           # Early stopping epochs.
-prediction_print_n: 10                # Number of examples to show during inference.
+prediction_print_n: 3                # Number of examples to show during inference.
 positive_threshold: 0.5
 
 # logging config

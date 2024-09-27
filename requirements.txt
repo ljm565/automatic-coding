@@ -1,0 +1,11 @@
+sconf==0.2.5
+tqdm==4.65.0
+transformers==4.39.3
+peft==0.12.0
+datasets==2.16.1
+matplotlib==3.7.1
+bitsandbytes==0.42.0
+flash-attn==2.6.3
+pandas==2.2.3
+numpy==1.26.3
+scikit-learn==1.5.2

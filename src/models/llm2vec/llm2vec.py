@@ -1,15 +1,12 @@
+import os
 import json
 import logging
-import os
-from functools import partial
+import numpy as np
 from typing import Dict, List, Optional, Union
 
-import numpy as np
 import torch
-import torch.multiprocessing as mp
 from peft import PeftModel
 from torch import Tensor, device, nn
-from tqdm.autonotebook import tqdm, trange
 from transformers import (
     AutoModel,
     AutoConfig,
@@ -23,7 +20,6 @@ from transformers import (
 
 from .bi_llama3 import (
     LlamaBiModel,
-    LlamaBiForMNTP
 )
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,3 @@
-import sys
-sys.path.append('/Users/ljm/Documents/Python/automatic-coding/src')
-
 import pandas as pd
 from tqdm import tqdm
 from typing import List

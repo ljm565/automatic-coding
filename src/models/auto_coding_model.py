@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from models.llm2vec import LLM2Vec
 from utils import colorstr
-from utils.data_utils import text_tokenize
 
 
 class AutomaticCodingModel(nn.Module):
@@ -20,16 +19,6 @@ class AutomaticCodingModel(nn.Module):
         
         if config.gradient_checkpointing:
             self.l2v.gradient_checkpointing_enable()
-
-        # documents = [
-        #     "As a general guideline, the CDC's average requirement of protein for women ages 19 to 70 is 46 grams per day. But, as you can see from this chart, you'll need to increase that if you're expecting or training for a marathon. Check out the chart below to see how much protein you should be eating each day.",
-        #     # "Definition of summit for English Language Learners. : 1  the highest point of a mountain : the top of a mountain. : 2  the highest level. : 3  a meeting or series of meetings between the leaders of two or more governments.",
-        # ]
-        # d_reps = self.l2v.encode(documents, device=device)
-
-        # feature1 = text_tokenize(documents[0], self.l2v.model.config, self.tokenizer, self.max_length, self.pooling_mode)
-        # feature2 = text_tokenize(documents[0], self.l2v.model.config, self.tokenizer, self.max_length, self.pooling_mode, True)
-        # print()
 
     
     def _init_l2v(self, config, device):
