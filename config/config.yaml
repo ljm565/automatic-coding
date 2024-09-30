@@ -29,7 +29,7 @@ warmup_steps: 400
 lr0: 1e-4
 lrf: 0.01                             # last_lr = lr0 * lrf
 scheduler_type: 'cosine'              # ['linear', 'cosine']
-pos_weight: 5
+pos_weight: 5                         # Positive label weight of the loss function.
 gradient_checkpointing: True
 patience: 5                          # Early stopping epochs.
 prediction_print_n: 3                # Number of examples to show during inference.
