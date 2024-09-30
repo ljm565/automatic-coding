@@ -18,7 +18,7 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/src/run/validation.py",
-            "args": ["-r", "outputs/gpt2/daily_dialog_chatbot", "-l", "metric", "--dataset_type", "test"],
+            "args": ["-r", "outputs/gpt2/daily_dialog_chatbot", "-l", "metric", "--dataset_type", "validation"],
             "console": "integratedTerminal",
             "justMyCode": true
         }

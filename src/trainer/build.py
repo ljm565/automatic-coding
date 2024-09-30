@@ -66,6 +66,6 @@ def get_data_loader(config, preprocessed_data, l2v_model_config, tokenizer, mode
                                        config.batch_size, 
                                        config.workers, 
                                        shuffle=(m == 'train'), 
-                                       is_ddp=is_ddp) for m in modes}
+                                       is_ddp=is_ddp) for m in modes if m in datasets}
 
     return dataloaders
