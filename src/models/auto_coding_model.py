@@ -36,7 +36,7 @@ class AutomaticCodingModel(nn.Module):
                 "McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp",
                 peft_model_name_or_path="McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-unsup-simcse",
                 device_map=device,
-                use_cache=True,
+                use_cache=config.gradient_checkpointing != True,
                 low_cpu_mem_usage=True,
                 load_in_8bit=load_in_8bit,
                 load_in_4bit=load_in_4bit,
@@ -45,7 +45,18 @@ class AutomaticCodingModel(nn.Module):
                 max_length=self.max_length
             )
         elif config.model.lower() == 'mistral':
-            raise NotImplementedError
+            model = LLM2Vec.from_pretrained(
+                "McGill-NLP/LLM2Vec-Mistral-7B-Instruct-v2-mntp",
+                peft_model_name_or_path="McGill-NLP/LLM2Vec-Mistral-7B-Instruct-v2-mntp-unsup-simcse",
+                device_map=device,
+                use_cache=config.gradient_checkpointing != True,
+                low_cpu_mem_usage=True,
+                load_in_8bit=load_in_8bit,
+                load_in_4bit=load_in_4bit,
+                torch_dtype=torch.bfloat16 if config.bit == 16 else torch.float32,
+                pooling_mode=self.pooling_mode,
+                max_length=self.max_length
+            )
         
         return model, model.tokenizer
     

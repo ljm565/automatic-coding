@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import numpy as np
+from tqdm.autonotebook import trange
 from typing import Dict, List, Optional, Union
 
 import torch
@@ -18,9 +19,8 @@ from transformers import (
     Qwen2Config,
 )
 
-from .bi_llama3 import (
-    LlamaBiModel,
-)
+from .bi_llama3 import LlamaBiModel
+from .bi_mistral import MistralBiModel
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,6 @@ class LLM2Vec(nn.Module):
             return MistralBiModel
         elif config_class_name == "LlamaConfig":
             return LlamaBiModel
-        elif config_class_name == "GemmaConfig":
-            return GemmaBiModel
-        elif config_class_name == "Qwen2Config":
-            return Qwen2BiModel
         else:
             raise ValueError(
                 f"{config_class_name} is not supported yet with bidirectional models."

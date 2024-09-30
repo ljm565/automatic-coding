@@ -7,34 +7,34 @@ device: [0]     # examples: [0], [0,1], [1,2,3], cpu, mps...
 
 # project config
 project: outputs/mimic3
-name: automatic_coding_1_resumed
+name: automatic_coding
 
 # model config
 model: llama3
 bit: 8
 max_len: 1024
 pooling_mode: mean              # [mean, weighted_mean, bos_token, eos_token]
-lora_activate: False
+lora_activate: True             # If True, LoRA requires_grad will be set to True.
 
 # data config
 workers: 0                      # Don't worry to set worker. The number of workers will be set automatically according to the batch size.
 mimic3_data_path: data/
-chunk_size: 100000
-label_pruning: False             # If True, only the required ICD codes will be used, otherwise all codes will be used.
+chunk_size: 100000              # Pandas data chunck size during reading NOTEEVENT data.
+label_pruning: False            # If True, only the required ICD codes will be used, otherwise all codes will be used.
 
 # train config
-batch_size: 16
-steps: 30000
-warmup_steps: 200
+batch_size: 8
+steps: 60000
+warmup_steps: 400
 lr0: 1e-4
-lrf: 0.01                              # last_lr = lr0 * lrf
+lrf: 0.01                             # last_lr = lr0 * lrf
 scheduler_type: 'cosine'              # ['linear', 'cosine']
 pos_weight: 5
-gradient_checkpointing: False
-patience: 5                           # Early stopping epochs.
+gradient_checkpointing: True
+patience: 5                          # Early stopping epochs.
 prediction_print_n: 3                # Number of examples to show during inference.
 positive_threshold: 0.5
 
 # logging config
 common: ['train_loss', 'validation_loss', 'lr']
-metrics: ['aucroc_macro', 'aucroc_micro', 'aucprc_macro', 'aucprc_micro']   # You can add more metrics after implements metric validation codes
+metrics: ['aucroc_macro', 'aucroc_micro', 'aucprc_macro', 'aucprc_micro']   # You can add more metrics after implements metric validation codes.
