@@ -10,7 +10,7 @@ project: outputs/mimic3
 name: automatic_coding
 
 # model config
-model: llama3
+model: llama3                   # [llama3, mistral]
 bit: 8
 max_len: 1024
 pooling_mode: mean              # [mean, weighted_mean, bos_token, eos_token]
